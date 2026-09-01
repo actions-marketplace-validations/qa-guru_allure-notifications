@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout allure-report-kit
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: qa-guru/allure-report-kit
           ref: main

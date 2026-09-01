@@ -18,7 +18,7 @@ jobs:
     steps:
       # Java tree is archived on legacy/java-5.0.8 (not on master).
       - name: Checkout changes
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: legacy/java-5.0.8
 
