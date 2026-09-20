@@ -18,7 +18,7 @@ const TEMPLATE_URLS = [
 /**
  * @typedef {{ href?: string, label?: string }} HeaderBrandLeadingConfig
  * @typedef {{ href?: string, leading?: HeaderBrandLeadingConfig }} HeaderBrandConfig
- * @typedef {{ href: string, label: string, active?: boolean, testid?: string }} HeaderNavItem
+ * @typedef {{ href: string, label: string, active?: boolean, testid?: string, match?: 'path' | 'host' }} HeaderNavItem
  * @typedef {{ default?: 'ru' | 'en' }} HeaderLangConfig
  * @typedef {{ default?: 'dark' | 'light' }} HeaderThemeConfig
  * @typedef {{ href?: string, label?: string, hidden?: boolean, iconSrc?: string }} HeaderToolLinkConfig
@@ -27,6 +27,10 @@ const TEMPLATE_URLS = [
  */
 
 export const HEADER_LANG_CHANGE = 'header:lang-change';
+export const HEADER_THEME_CHANGE = 'header:theme-change';
+
+const LANG_STORAGE_KEY = 'zds-lang';
+const THEME_STORAGE_KEY = 'zds-theme';
 
 /**
  * Keyboard vs pointer focus — SSOT with css/tokens.css
@@ -59,6 +63,7 @@ function installKeyboardFocusIntent() {
 
 if (typeof window !== 'undefined') {
   window.HEADER_LANG_CHANGE = HEADER_LANG_CHANGE;
+  window.HEADER_THEME_CHANGE = HEADER_THEME_CHANGE;
   installKeyboardFocusIntent();
 }
 
@@ -160,10 +165,72 @@ function hrefToPathname(href) {
 }
 
 /**
+ * Path to keep on Stage/Prod. Stack board and cell mount stay twins;
+ * in-app routes (/login, /register) collapse to the cell home — not copied.
+ * @param {string} pathname
+ * @param {string} [search]
+ * @returns {{ pathname: string, search: string }}
+ */
+function envSwitcherTarget(pathname, search) {
+  const current = normalizePathname(pathname);
+  const pair = current.match(/^(\/stack\/backend-[^/]+\/frontend-[^/]+)/);
+  if (pair) {
+    return { pathname: `${pair[1]}/`, search: '' };
+  }
+  if (current === '/stack' || current.startsWith('/stack/')) {
+    return { pathname: '/stack/', search: search || '' };
+  }
+  return { pathname: '/', search: '' };
+}
+
+/**
+ * Env switcher (`match: 'host'`): highlight by hostname. Rewrite href to the
+ * stack board or cell mount on that origin. Never copy /login onto the other stand.
+ * @param {HTMLAnchorElement} link
+ */
+function syncHostMatchLink(link) {
+  let url;
+  try {
+    url = new URL(link.getAttribute('href') || '', window.location.origin);
+  } catch {
+    return;
+  }
+  const target = envSwitcherTarget(window.location.pathname, window.location.search);
+  url.pathname = target.pathname;
+  url.search = target.search;
+  url.hash = '';
+  link.setAttribute('href', url.toString());
+  const isCurrentHost = url.hostname === window.location.hostname;
+  link.classList.toggle('is-active', isCurrentHost);
+  if (isCurrentHost) {
+    link.setAttribute('aria-current', 'true');
+  } else {
+    link.removeAttribute('aria-current');
+  }
+}
+
+/**
+ * `/` is exact-only so Home does not steal `/stack/…`. Other hrefs match
+ * themselves and descendant paths (`/stack` → `/stack/backend-…`).
+ * @param {string | null} hrefPath
+ * @param {string} current
+ */
+function pathMatches(hrefPath, current) {
+  if (!hrefPath) {
+    return false;
+  }
+  if (hrefPath === '/') {
+    return current === '/';
+  }
+  return current === hrefPath || current.startsWith(`${hrefPath}/`);
+}
+
+/**
  * Recompute is-active / aria-current on the rendered nav from the current URL.
- * Exactly one link is ever marked. Falls back to the config-declared active
- * item (data-header-active) only when no nav href matches the current route.
- * Syncs both inline nav and mobile menu nav links.
+ * Exactly one path-matched link is ever marked `aria-current="page"`. Falls back
+ * to the config-declared active item (data-header-active) only when no nav href
+ * matches the current route. Longest matching href wins. Host-match items
+ * (env switchers) keep origin, rewrite stack/cell path, and highlight by host.
  * @param {ParentNode} root
  */
 function syncActiveNav(root) {
@@ -178,16 +245,29 @@ function syncActiveNav(root) {
     return;
   }
 
+  const pathLinks = links.filter((link) => link.dataset.headerMatch !== 'host');
+  const hostLinks = links.filter((link) => link.dataset.headerMatch === 'host');
+
   const current = normalizePathname(window.location.pathname);
-  const routeHref = links
-    .find((link) => hrefToPathname(link.getAttribute('href')) === current)
-    ?.getAttribute('href');
-  const fallbackHref = links
+  let routeHref = null;
+  let bestLen = -1;
+  for (const link of pathLinks) {
+    const hrefPath = hrefToPathname(link.getAttribute('href'));
+    if (!pathMatches(hrefPath, current)) {
+      continue;
+    }
+    const len = hrefPath ? hrefPath.length : 0;
+    if (len > bestLen) {
+      bestLen = len;
+      routeHref = link.getAttribute('href');
+    }
+  }
+  const fallbackHref = pathLinks
     .find((link) => link.dataset.headerActive === 'true')
     ?.getAttribute('href');
   const activeHref = routeHref ?? fallbackHref ?? null;
 
-  for (const link of links) {
+  for (const link of pathLinks) {
     const isActive =
       activeHref !== null && link.getAttribute('href') === activeHref;
     link.classList.toggle('is-active', isActive);
@@ -196,6 +276,10 @@ function syncActiveNav(root) {
     } else {
       link.removeAttribute('aria-current');
     }
+  }
+
+  for (const link of hostLinks) {
+    syncHostMatchLink(link);
   }
 }
 
@@ -236,6 +320,9 @@ function applyHeaderConfig(root, config) {
       link.dataset.testid = item.testid ?? `header-nav-${index}`;
       if (item.active) {
         link.dataset.headerActive = 'true';
+      }
+      if (item.match === 'host') {
+        link.dataset.headerMatch = 'host';
       }
       return [divider, link];
     })
@@ -309,6 +396,9 @@ function buildHeaderMenu(root, config) {
         if (item.active) {
           link.dataset.headerActive = 'true';
         }
+        if (item.match === 'host') {
+          link.dataset.headerMatch = 'host';
+        }
         return link;
       })
     );
@@ -320,8 +410,11 @@ function buildHeaderMenu(root, config) {
   menuSearch.dataset.testid = 'header-menu-search';
   const searchInput = document.createElement('input');
   searchInput.type = 'search';
+  searchInput.id = 'header-menu-search-input';
+  searchInput.name = 'header-menu-search';
   searchInput.className = 'input';
   searchInput.placeholder = 'Поиск';
+  searchInput.autocomplete = 'off';
   searchInput.dataset.testid = 'header-menu-search-input';
   searchInput.setAttribute('aria-label', 'Поиск');
   menuSearch.appendChild(searchInput);
@@ -454,10 +547,63 @@ function bindHeaderMenu(root) {
   window.addEventListener('resize', onViewportChange);
 }
 
+/** @param {string} key @returns {string | null} */
+function readStorage(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} key @param {string} value */
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // private mode / blocked storage
+  }
+}
+
+/** @param {string | null | undefined} value @returns {value is 'en' | 'ru'} */
+function isLang(value) {
+  return value === 'en' || value === 'ru';
+}
+
+/** @param {string | null | undefined} value @returns {value is 'light' | 'dark'} */
+function isTheme(value) {
+  return value === 'light' || value === 'dark';
+}
+
+/** @param {HeaderLangConfig | undefined} langConfig @returns {'en' | 'ru'} */
+function resolveLang(langConfig) {
+  const stored = readStorage(LANG_STORAGE_KEY);
+  if (isLang(stored)) {
+    return stored;
+  }
+  return langConfig?.default === 'ru' ? 'ru' : 'en';
+}
+
+/** @param {HeaderThemeConfig | undefined} themeConfig @returns {'light' | 'dark'} */
+function resolveTheme(themeConfig) {
+  const stored = readStorage(THEME_STORAGE_KEY);
+  if (isTheme(stored)) {
+    return stored;
+  }
+  return themeConfig?.default === 'dark' ? 'dark' : 'light';
+}
+
 /** @param {'ru' | 'en'} lang */
 function dispatchLangChange(lang) {
   document.dispatchEvent(
     new CustomEvent(HEADER_LANG_CHANGE, { detail: { lang } })
+  );
+}
+
+/** @param {'light' | 'dark'} theme */
+function dispatchThemeChange(theme) {
+  document.dispatchEvent(
+    new CustomEvent(HEADER_THEME_CHANGE, { detail: { theme } })
   );
 }
 
@@ -483,11 +629,18 @@ function syncAllLangToggles(root, lang) {
   }
 }
 
+/** @param {ParentNode} root @param {'ru' | 'en'} lang */
+function applyLang(root, lang) {
+  const code = lang === 'en' ? 'en' : 'ru';
+  syncAllLangToggles(root, code);
+  document.documentElement.lang = code;
+  writeStorage(LANG_STORAGE_KEY, code);
+  dispatchLangChange(code);
+}
+
 /** @param {ParentNode} root @param {HeaderLangConfig | undefined} langConfig */
 function applyLangDefault(root, langConfig) {
-  const code = langConfig?.default === 'ru' ? 'ru' : 'en';
-  syncAllLangToggles(root, code);
-  dispatchLangChange(code);
+  applyLang(root, resolveLang(langConfig));
 }
 
 /** @param {HTMLElement} themeBtn */
@@ -495,10 +648,32 @@ function setThemeIcon(themeBtn) {
   syncThemeToggleIcon(themeBtn);
 }
 
-/** @param {HeaderThemeConfig | undefined} themeConfig */
-function applyThemeDefault(themeConfig) {
-  const isLight = themeConfig?.default !== 'dark';
-  document.documentElement.classList.toggle('theme-light', isLight);
+/** @param {ParentNode} root */
+function queryThemeToggles(root) {
+  return [...root.querySelectorAll(
+    '[data-testid="header-theme-toggle"], [data-testid="header-menu-theme-toggle"]'
+  )].filter((el) => el instanceof HTMLElement);
+}
+
+/** @param {ParentNode} root */
+function syncAllThemeToggles(root) {
+  for (const themeBtn of queryThemeToggles(root)) {
+    setThemeIcon(themeBtn);
+  }
+}
+
+/** @param {ParentNode} root @param {'light' | 'dark'} theme */
+function applyTheme(root, theme) {
+  const next = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.classList.toggle('theme-light', next === 'light');
+  writeStorage(THEME_STORAGE_KEY, next);
+  syncAllThemeToggles(root);
+  dispatchThemeChange(next);
+}
+
+/** @param {ParentNode} root @param {HeaderThemeConfig | undefined} themeConfig */
+function applyThemeDefault(root, themeConfig) {
+  applyTheme(root, resolveTheme(themeConfig));
 }
 
 async function fetchHeaderTemplate() {
@@ -525,15 +700,7 @@ async function mountHeader() {
   applyHeaderTools(mount, config.tools);
   buildHeaderMenu(mount, config);
   applyLangDefault(mount, config.lang);
-  applyThemeDefault(config.theme);
-
-  for (const themeBtn of mount.querySelectorAll(
-    '[data-testid="header-theme-toggle"], [data-testid="header-menu-theme-toggle"]'
-  )) {
-    if (themeBtn instanceof HTMLElement) {
-      setThemeIcon(themeBtn);
-    }
-  }
+  applyThemeDefault(mount, config.theme);
 
   bindHeaderControls(mount);
   bindHeaderMenu(mount);
@@ -553,23 +720,16 @@ function bindHeaderControls(root) {
         return;
       }
       const next = langBtn.dataset.lang === 'ru' ? 'en' : 'ru';
-      syncAllLangToggles(root, next);
-      dispatchLangChange(next);
+      applyLang(root, next);
     });
   }
 
-  const themeBtns = [
-    ...root.querySelectorAll(
-      '[data-testid="header-theme-toggle"], [data-testid="header-menu-theme-toggle"]'
-    ),
-  ].filter((el) => el instanceof HTMLElement);
-
-  for (const themeBtn of themeBtns) {
+  for (const themeBtn of queryThemeToggles(root)) {
     themeBtn.addEventListener('click', () => {
-      document.documentElement.classList.toggle('theme-light');
-      for (const btn of themeBtns) {
-        setThemeIcon(btn);
-      }
+      const next = document.documentElement.classList.contains('theme-light')
+        ? 'dark'
+        : 'light';
+      applyTheme(root, next);
     });
   }
 }

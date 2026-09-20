@@ -28,7 +28,7 @@ body {
   width: 100%;
   box-sizing: border-box;
   margin-inline: 0;
-  background: var(--color-surface-soft);
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
@@ -230,29 +230,29 @@ body {
 
 /* Preview panel chrome (TG header bar) follows jar darkMode, not page theme. */
 #anb-preview-panel[data-anb-dark="true"] {
-  --panel-bg: #323232;
+  --panel-bg: #262523;
   --panel-border: rgba(96, 96, 96, 0.9);
-  --panel-bar-bg: #3c3c3c;
+  --panel-bar-bg: #413f3c;
 }
 
 #anb-preview-panel[data-anb-dark="false"] {
-  --panel-bg: #f7f7f9;
-  --panel-border: rgba(210, 210, 214, 0.95);
+  --panel-bg: #eef0f3;
+  --panel-border: rgba(15, 23, 42, 0.12);
   --panel-bar-bg: #ffffff;
 }
 
 .anb-canvas[data-anb-dark="true"] {
-  background: #222;
+  background: #0e0d0c;
 }
 
 .anb-canvas[data-anb-dark="false"] {
-  background: #eef2f6;
+  background: #e8eaee;
 }
 
 .anb-canvas[data-anb-dark="false"] .grid-stack {
   background-image:
-    linear-gradient(to right, rgba(26, 35, 48, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(26, 35, 48, 0.1) 1px, transparent 1px);
+    linear-gradient(to right, rgba(15, 23, 42, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.08) 1px, transparent 1px);
 }
 
 .anb-canvas[data-anb-dark="false"] .grid-stack-item-content {
@@ -1575,4 +1575,37 @@ html.theme-light .anb-zone--terminal .ch-theme--vscode .ch-tok-cmd { color: #795
 
 .anb-palette__tile .widget-tile__bar:not(:empty) {
   display: flex;
+}
+
+/* Default profile = native Allure 3 chrome (title left, no traffic-light dots). */
+[data-anb-chart-profile="default"] {
+  --anb-stock-funnel: #9b6dd4;
+  --anb-stock-dynamics: #f07167;
+  --anb-stock-bar-1: #8b6bb5;
+  --anb-stock-bar-2: #f07167;
+  --anb-stock-bar-3: #5ec4b6;
+  --anb-stock-bar-4: #e8a0bf;
+}
+
+html.theme-light [data-anb-chart-profile="default"],
+[data-anb-chart-profile="default"][data-anb-dark="false"] {
+  --anb-stock-funnel: #7c5cbf;
+  --anb-stock-dynamics: #e85d5d;
+  --anb-stock-bar-1: #7c5cbf;
+  --anb-stock-bar-2: #e85d5d;
+  --anb-stock-bar-3: #2aa89a;
+  --anb-stock-bar-4: #d989b0;
+}
+
+[data-anb-chart-profile="default"] .widget-tile__bar .indicator-row {
+  display: none;
+}
+
+[data-anb-chart-profile="default"] .widget-tile__title {
+  text-align: left;
+  color: var(--color-text);
+}
+
+#anb-palette[data-anb-chart-profile="default"] .widget-tile__bar {
+  display: none;
 }
